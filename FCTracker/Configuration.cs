@@ -219,7 +219,7 @@ public class Configuration
         if (arrayDataString->Size > 1)
         {
             fcData.MemberData = [];
-            for(int i = 0; i < fcData.TotalMembers; i++)
+            for(int i = 0; i < Math.Min(200, fcData.TotalMembers); i++)
             {
                 CStringPointer x        = arrayDataString->StringArray[i*5];
                 SeString       seString = MemoryHelper.ReadSeStringNullTerminated(new IntPtr(x));
