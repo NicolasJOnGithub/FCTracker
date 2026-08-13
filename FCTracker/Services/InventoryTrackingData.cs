@@ -55,9 +55,22 @@ namespace FCTracker.Services
         public                  int     GetSalvageCount  => SalvageItems.Sum(item => this.GetItemCount(item!.Value.RowId));
         public                  int[]   GetSalvageCounts => SalvageItems.Select(item => this.GetItemCount(item!.Value.RowId)).ToArray();
 
+        internal static readonly InventoryType[] BAG = [InventoryType.Inventory1, InventoryType.Inventory2, InventoryType.Inventory3, InventoryType.Inventory4];
+        internal static readonly InventoryType[] ARMORY = [InventoryType.ArmoryBody, InventoryType.ArmoryEar, InventoryType.ArmoryFeets, InventoryType.ArmoryHands,
+            InventoryType.ArmoryHead, InventoryType.ArmoryLegs, InventoryType.ArmoryMainHand, InventoryType.ArmoryOffHand, InventoryType.ArmoryNeck,
+            InventoryType.ArmoryWaist, InventoryType.ArmorySoulCrystal, InventoryType.ArmoryWrist];
+
+        internal static readonly InventoryType[] SADDLEBAG   = [InventoryType.SaddleBag1, InventoryType.SaddleBag2, InventoryType.PremiumSaddleBag1, InventoryType.PremiumSaddleBag2];
+        internal static readonly InventoryType[] FREE_COMPANY = [InventoryType.FreeCompanyCrystals, InventoryType.FreeCompanyGil, InventoryType.FreeCompanyPage1, InventoryType.FreeCompanyPage2, InventoryType.FreeCompanyPage3, InventoryType.FreeCompanyPage4, InventoryType.FreeCompanyPage5];
+        
+        internal static readonly InventoryType[] OTHER     = [InventoryType.Currency, InventoryType.Crystals];
+
+        internal static readonly InventoryType[] ALL = [..ARMORY, ..BAG, ..SADDLEBAG, ..FREE_COMPANY, ..OTHER];
+        internal static readonly uint[] ALL_AT = ALL.Select(t => (uint)t).ToArray();
+
         public static string GetSalvageText(int[] counts)
         {
-            StringBuilder sb       = new();
+            StringBuilder sb = new();
 
             long gilTotal = 0;
 
@@ -82,11 +95,14 @@ namespace FCTracker.Services
             this.cachedItemCounts ??= [];
             if (ECommonsIPC.AllaganTools.Available && this.CID != 0 && (!this.cachedItemCounts.ContainsKey(id) || EzThrottler.Throttle($"ItemCheck_{id}_{this.CID}", 300_000)))
             {
-                uint atCount = ECommonsIPC.AllaganTools.ItemCount(id, this.CID, -1);
+                if(Configuration.Instance.AllCharData.TryGetValue(this.CID, out CharData charData))
+                    if (charData.ATChars != null)
+                    {
+                        uint atCount = charData.ATChars.Aggregate<ulong, uint>(0, (current, type) => current + ECommonsIPC.AllaganTools.ItemCount(id, type, -1));
+                        Svc.Log.Debug($"Item count polled from AT for {id} for CID {this.CID}: {atCount}");
 
-                Svc.Log.Debug($"Item count polled from AT for {id} for CID {this.CID}: {atCount}");
-
-                this.cachedItemCounts[id] = (int)atCount;
+                        this.cachedItemCounts[id] = (int)atCount;
+                    }
             }
 
             return this.CachedItemCounts.GetValueOrDefault(id, 0);

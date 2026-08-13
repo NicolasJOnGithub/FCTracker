@@ -13,6 +13,7 @@ using ECommons.Configuration;
 using ECommons.DalamudServices;
 using ECommons.ExcelServices;
 using ECommons.GameHelpers;
+using ECommons.IPC;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
@@ -153,7 +154,8 @@ public class Configuration
                                                       LeveAllowances = Math.Min(100, PlayerHelper.LeveAllowances + 3),
                                                       LeveAllowanceTime = QuestManager.GetNextLeveAllowancesDateTime(),
                                                       LevelsCombat = PlayerHelper.GetHighestCombatLevelsFromSheet(),
-                                                      LevelsGathering = PlayerHelper.GetGatheringLevelsFromSheet()
+                                                      LevelsGathering = PlayerHelper.GetGatheringLevelsFromSheet(),
+                                                      ATChars = ECommonsIPC.AllaganTools.Available ? ECommonsIPC.AllaganTools.GetCharactersOwnedByActive(true) : null
                                                   };
         this.Save();
     }
@@ -488,6 +490,8 @@ public struct CharData()
                            Math.Min(100, this.LeveAllowances + (int)(timePassed.TotalHours / 12));
         }
     }
+
+    public HashSet<ulong>? ATChars { get; set; }
 
     public readonly override int GetHashCode() =>
         this.CID.GetHashCode();
