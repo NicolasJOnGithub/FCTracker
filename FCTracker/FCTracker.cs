@@ -53,6 +53,9 @@ public sealed class FCTrackerPlugin : IDalamudPlugin
     /// <summary>Records FC housing lottery bids and resolves their outcome.</summary>
     public LotteryTracker LotteryTracker { get; private set; } = null!;
 
+    /// <summary>Drives the "check my bids" sweep across characters and plots.</summary>
+    public LotteryCheckRunner LotteryCheckRunner { get; } = new();
+
     public static ulong? LoggedInCID { get; set; }
 
     public int Version { get; init; }

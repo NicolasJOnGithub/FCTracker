@@ -43,7 +43,9 @@ public class ReadyNowView : IFCView
         }
 
         ImGui.SetCursorPos(new Vector2(14, 12));
-        DrawBannerHeader(readyFCs.Count(fc => fc.IsEligible));
+        DrawBannerHeader(readyFCs.Count(fc => fc.IsEligible), readyFCs);
+
+        DrawRunnerStatus();
 
         ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 8);
 
@@ -52,7 +54,7 @@ public class ReadyNowView : IFCView
                                       ImGuiTableFlags.SizingFixedFit |
                                       ImGuiTableFlags.Resizable;
 
-        using ImRaii.TableDisposable table = ImRaii.Table("##ReadyTable", 7, flags);
+        using ImRaii.TableDisposable table = ImRaii.Table("##ReadyTable", 8, flags);
         if (!table.Success)
             return;
 
@@ -63,6 +65,7 @@ public class ReadyNowView : IFCView
         ImGui.TableSetupColumn("FC Points", ImGuiTableColumnFlags.WidthFixed, 80);
         ImGui.TableSetupColumn("Bid",       ImGuiTableColumnFlags.WidthFixed, 240);
         ImGui.TableSetupColumn("Result",    ImGuiTableColumnFlags.WidthFixed, 95);
+        ImGui.TableSetupColumn("##Check",   ImGuiTableColumnFlags.WidthFixed, 34);
         ImGui.TableSetupColumn("##Travel",  ImGuiTableColumnFlags.WidthFixed, 34);
         ImGui.TableSetupColumn("##Spacer",  ImGuiTableColumnFlags.WidthStretch);
 
@@ -85,7 +88,7 @@ public class ReadyNowView : IFCView
         }
     }
 
-    private static void DrawBannerHeader(int count)
+    private static void DrawBannerHeader(int count, IReadOnlyList<FCData> readyFCs)
     {
         using (ImRaii.PushColor(ImGuiCol.ChildBg, FCTrackerTheme.AccentGreenDim))
         {
@@ -116,7 +119,59 @@ public class ReadyNowView : IFCView
                     FCTrackerWidgets.ColoredText(FCTrackerTheme.TextPrimary,
                                                  $"Next Entry period active from {FCTrackerPlugin.Plugin.EntryPeriodNextStartDate:d} to {FCTrackerPlugin.Plugin.EntryPeriodNextEndDate:d}");
             }
+
+            DrawCheckBidsButton(readyFCs);
         }
+    }
+
+    /// <summary>Runs the whole sweep: every FC with a pending bid, every known character.</summary>
+    private static void DrawCheckBidsButton(IReadOnlyList<FCData> readyFCs)
+    {
+        LotteryCheckRunner runner  = FCTrackerPlugin.Plugin.LotteryCheckRunner;
+        int                pending = LotteryCheckRunner.PendingBidCount(readyFCs);
+
+        ImGui.SameLine(ImGui.GetContentRegionAvail().X - 130f);
+
+        if (runner.Running)
+        {
+            if (FCTrackerWidgets.Button("Stop", FCTrackerTheme.AccentRedDim, FCTrackerTheme.AccentRed))
+                runner.Stop();
+
+            return;
+        }
+
+        using (ImRaii.Disabled(pending == 0))
+            if (FCTrackerWidgets.Button($"Check bids ({pending})", FCTrackerTheme.AccentBlueDim, FCTrackerTheme.AccentBlue))
+                runner.Start(readyFCs);
+
+        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+            FCTrackerWidgets.Tooltip(pending == 0 ? "No pending bids to check." : CheckTooltip());
+    }
+
+    private static string CheckTooltip() =>
+        "Log into each FC's characters, visit every plot with a pending bid, and record the result.\n" +
+        "A loss has its refund accepted. A win is left unclaimed on purpose.\n\n" +
+        (LotteryCheckRunner.DryRun
+             ? "Dry run is ON - it will report what it would accept and confirm nothing.\nTurn it off in settings once you trust it."
+             : "Dry run is OFF - refunds will actually be accepted.");
+
+    private static void DrawRunnerStatus()
+    {
+        LotteryCheckRunner runner = FCTrackerPlugin.Plugin.LotteryCheckRunner;
+
+        if (!runner.Running && runner.Log.Count == 0)
+            return;
+
+        ImGui.SetCursorPosX(14);
+
+        if (runner.Running)
+            FCTrackerWidgets.IconLabel(FCTrackerTheme.AccentBlue, FontAwesomeIcon.Sync,
+                                       $"{runner.Status}   ·   {runner.Remaining} left");
+        else
+            FCTrackerWidgets.IconLabel(FCTrackerTheme.TextSecondary, FontAwesomeIcon.CheckCircle, runner.Status);
+
+        if (runner.Log.Count > 0 && ImGui.IsItemHovered())
+            FCTrackerWidgets.Tooltip(string.Join("\n", runner.Log.TakeLast(20)));
     }
 
     /// <summary>
@@ -148,6 +203,7 @@ public class ReadyNowView : IFCView
         ImGui.TableNextColumn();
         ImGui.TableNextColumn();
         ImGui.TableNextColumn();
+        ImGui.TableNextColumn();
     }
 
     private static void DrawRow(FCData fc)
@@ -169,6 +225,7 @@ public class ReadyNowView : IFCView
 
         DrawBidCell(fc, bid, hhBid);
         DrawResultCell(bid);
+        DrawCheckCell(fc);
         DrawTravelCell(fc, bid, hhBid);
 
         ImGui.TableNextColumn();
@@ -286,6 +343,27 @@ public class ReadyNowView : IFCView
         LotteryOutcome.Lost    => LotteryOutcome.Claimed,
         _                      => LotteryOutcome.Pending,
     };
+
+    /// <summary>Re-run the sweep for just this FC.</summary>
+    private static void DrawCheckCell(FCData fc)
+    {
+        ImGui.TableNextColumn();
+
+        LotteryCheckRunner runner = FCTrackerPlugin.Plugin.LotteryCheckRunner;
+
+        if (!LotteryCheckRunner.HasWork(fc))
+            return;
+
+        using (ImRaii.Disabled(runner.Running))
+            if (FCTrackerWidgets.IconButton(FontAwesomeIcon.Search, $"bidcheck{fc.Id}",
+                                            FCTrackerTheme.AccentBlueDim, FCTrackerTheme.AccentBlue))
+                runner.Start([fc]);
+
+        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+            FCTrackerWidgets.Tooltip(runner.Running
+                                         ? "A check is already running."
+                                         : $"Check this FC's pending bids.\n\n{CheckTooltip()}");
+    }
 
     private static void DrawTravelCell(FCData fc, LotteryBidRecord? bid, HouseHunterIPC.LotterySaveData? hhBid)
     {

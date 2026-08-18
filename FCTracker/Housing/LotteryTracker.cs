@@ -3,8 +3,6 @@ namespace FCTracker.Housing;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Text.RegularExpressions;
 using Dalamud.Game.Addon.Lifecycle;
 using Dalamud.Game.Addon.Lifecycle.AddonArgTypes;
 using Dalamud.Game.Chat;
@@ -80,11 +78,11 @@ public sealed class LotteryTracker : IDisposable
         try
         {
             // API 15 hands us an AtkUnitBasePtr wrapper rather than a raw pointer.
-            string text = ReadAddonText((AtkUnitBase*)args.Addon.Address);
+            string text = LotteryDialog.ReadText((AtkUnitBase*)args.Addon.Address);
             if (text.Length == 0 || !text.Contains("lottery", StringComparison.OrdinalIgnoreCase))
                 return;
 
-            long gil = ParseGil(text);
+            long gil = LotteryDialog.ReadAmount(text);
             if (gil <= 0)
                 return;
 
@@ -97,38 +95,6 @@ public sealed class LotteryTracker : IDisposable
         {
             Svc.Log.Error(e, "[FCTracker lottery] entry dialog read failed");
         }
-    }
-
-    private static unsafe string ReadAddonText(AtkUnitBase* addon)
-    {
-        if (addon == null)
-            return string.Empty;
-
-        StringBuilder sb = new();
-
-        for (int i = 0; i < addon->UldManager.NodeListCount; i++)
-        {
-            AtkResNode* node = addon->UldManager.NodeList[i];
-            if (node == null || node->Type != NodeType.Text)
-                continue;
-
-            string value = ((AtkTextNode*)node)->NodeText.ToString();
-            if (!string.IsNullOrWhiteSpace(value))
-                sb.Append(value).Append(' ');
-        }
-
-        return sb.ToString();
-    }
-
-    private static long ParseGil(string text)
-    {
-        Match match = RegexHelper.GilAmountRegex().Match(text);
-        if (!match.Success)
-            return 0;
-
-        string digits = new(match.Groups[1].Value.Where(char.IsDigit).ToArray());
-
-        return long.TryParse(digits, out long value) ? value : 0;
     }
 
     // ---------------------------------------------------------------- placard

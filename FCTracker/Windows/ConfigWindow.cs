@@ -55,6 +55,16 @@ public class ConfigWindow : Window, IDisposable
                 ImGui.SetCursorPosX(14);
                 if (FCTrackerWidgets.Checkbox("Track Inventories if Allagan Tools is not available", ref globalData.GatherDataSelf))
                     Configuration.Instance.Save();
+
+                ImGui.SetCursorPosX(14);
+                if (FCTrackerWidgets.Checkbox("Bid check: dry run", ref globalData.LotteryCheckDryRun))
+                    Configuration.Instance.Save();
+
+                if (ImGui.IsItemHovered())
+                    FCTrackerWidgets.Tooltip(
+                        "While on, checking bids reports what it would confirm and confirms nothing.\n\n" +
+                        "Turn it off to have losing bids' refunds accepted automatically. A won plot is\n" +
+                        "never claimed either way - that spends the FC's gil, so it stays your call.");
             }
             DrawImportData();
             DrawExcludedCharData();
