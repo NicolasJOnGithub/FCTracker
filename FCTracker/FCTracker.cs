@@ -53,6 +53,15 @@ public sealed class FCTrackerPlugin : IDalamudPlugin
     /// <summary>Records FC housing lottery bids and resolves their outcome.</summary>
     public LotteryTracker LotteryTracker { get; private set; } = null!;
 
+    /// <summary>
+    /// Drives the "check my bids" sweep across characters and plots. Assigned in the constructor
+    /// body rather than here: it owns a TaskManager, whose constructor subscribes to
+    /// Svc.Framework.Update, and property initializers on this class run before the constructor
+    /// body's ECommonsMain.Init call populates Svc - constructing it here throws a
+    /// NullReferenceException on Svc.Framework instead.
+    /// </summary>
+    public LotteryCheckRunner LotteryCheckRunner { get; private set; } = null!;
+
     public static ulong? LoggedInCID { get; set; }
 
     public int Version { get; init; }
@@ -106,7 +115,8 @@ public sealed class FCTrackerPlugin : IDalamudPlugin
                                                    ShowDebug       = true
                                                });
 
-            this.LotteryTracker = new LotteryTracker();
+            this.LotteryTracker     = new LotteryTracker();
+            this.LotteryCheckRunner = new LotteryCheckRunner();
 
             if (Svc.ClientState.IsLoggedIn)
                 this.ClientStateOnLogin();

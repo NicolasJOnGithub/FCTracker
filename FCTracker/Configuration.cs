@@ -396,6 +396,13 @@ public class GlobalData
 {
     public bool GatherDataSelf = true;
     public List<ulong> ExcludedChars { get; set; } = [];
+
+    /// <summary>
+    /// While set, the bid checker reports what it would confirm instead of confirming it. On by
+    /// default: the run drives real dialogs that can move the FC's gil, so the first outing should
+    /// be one you watch.
+    /// </summary>
+    public bool LotteryCheckDryRun = true;
 }
 
 [JsonObject(MemberSerialization.OptOut)]
