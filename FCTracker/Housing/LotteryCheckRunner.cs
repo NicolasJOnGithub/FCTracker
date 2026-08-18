@@ -233,17 +233,31 @@ public sealed class LotteryCheckRunner
         new($"{step.Fc.WorldName}-{step.Fc.Id}-Check",
             (int)step.Fc.HomeWorldId, (int)step.Bid.City, step.Bid.Ward + 1, 0, step.Bid.Plot + 1);
 
+    /// <summary>
+    /// The ECommons.IPC wrapper FCTracker consumes does not mirror Lifestream's own IsHere/
+    /// IsQuickTravelAvailable subscribers - only GetCurrentPlotInfo is exposed, so "are we already
+    /// there" is derived from that instead. It reports the same 0-based ward/plot HousingManager
+    /// does, which matches FCTracker's own convention.
+    /// </summary>
+    private static bool AlreadyAtPlot(Step step)
+    {
+        (int Kind, int Ward, int Plot)? here = ECommonsIPC.Lifestream.GetCurrentPlotInfo();
+
+        return here.HasValue                        &&
+               here.Value.Kind == (int)step.Bid.City &&
+               here.Value.Ward == step.Bid.Ward      &&
+               here.Value.Plot == step.Bid.Plot;
+    }
+
     private static bool Travel(Step step)
     {
-        (string, int, int, int, int, int, int, bool, bool, string) tuple = Address(step).ToTuple();
-
-        if (ECommonsIPC.Lifestream.IsHere(tuple))
+        if (AlreadyAtPlot(step))
             return true;
 
         if (ECommonsIPC.Lifestream.IsBusy())
             return false;
 
-        ECommonsIPC.Lifestream.GoToHousingAddress(tuple);
+        ECommonsIPC.Lifestream.GoToHousingAddress(Address(step).ToTuple());
 
         return true;
     }
