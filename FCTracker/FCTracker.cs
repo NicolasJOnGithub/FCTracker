@@ -20,6 +20,7 @@ using Dalamud.Utility;
 using ECommons.Automation.NeoTaskManager;
 using ECommons.GameHelpers;
 using FFXIVClientStructs.FFXIV.Client.Game;
+using Housing;
 using Services;
 using UI;
 using FFXIVClientStructs.FFXIV.Client.UI;
@@ -48,6 +49,9 @@ public sealed class FCTrackerPlugin : IDalamudPlugin
     private readonly (string[], string, Action<string[]>)[] commands = null!;
 
     public TaskManager TaskManager { get; init; } = null!;
+
+    /// <summary>Records FC housing lottery bids and resolves their outcome.</summary>
+    public LotteryTracker LotteryTracker { get; private set; } = null!;
 
     public static ulong? LoggedInCID { get; set; }
 
@@ -102,6 +106,8 @@ public sealed class FCTrackerPlugin : IDalamudPlugin
                                                    ShowDebug       = true
                                                });
 
+            this.LotteryTracker = new LotteryTracker();
+
             if (Svc.ClientState.IsLoggedIn)
                 this.ClientStateOnLogin();
 
@@ -140,6 +146,8 @@ public sealed class FCTrackerPlugin : IDalamudPlugin
         Svc.ClientState.Login                  -= this.ClientStateOnLogin;
         Svc.ClientState.Logout                 -= this.ClientStateOnLogout;
         Svc.ClientState.TerritoryChanged       -= this.ClientStateOnTerritoryChanged;
+
+        this.LotteryTracker?.Dispose();
 
         this.windowSystem.RemoveAllWindows();
 
