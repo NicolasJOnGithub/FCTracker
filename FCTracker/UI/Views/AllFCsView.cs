@@ -15,6 +15,7 @@ using ECommons.DalamudServices;
 using ECommons.GameHelpers;
 using ECommons.ImGuiMethods;
 using ECommons.IPC;
+using Housing;
 using NightmareUI.Censoring;
 using Services;
 
@@ -264,7 +265,7 @@ public class AllFCsView : IFCView
         FCTrackerWidgets.ColoredText(FCTrackerTheme.TextPrimary, Censor.Character(fc.FCName));
 
         if (selectable && ImGui.IsItemClicked(ImGuiMouseButton.Left))
-            ECommonsIPC.Lifestream.ChangeCharacter(fc.MasterAvailable ? fc.MasterString : Configuration.Instance.GatheredData.CharByCID[fc.MemberCIDs.First()].Name, fc.WorldName);
+            LifestreamNavigator.ChangeToFCCharacter(fc);
 
         if(fc.MemberCIDs.Count > 0 && ImGui.IsItemHovered())
             FCTrackerWidgets.Tooltip(fc.MembersString(false));
@@ -343,31 +344,8 @@ public class AllFCsView : IFCView
         }
 
 
-        void TeleportToFCHouse()
-        {
-            if(fc.MemberCIDs.Contains(Player.CID))
-                ECommonsIPC.Lifestream.TeleportToFC();
-            else
-                ECommonsIPC.Lifestream.GoToHousingAddress(($"{fc.WorldName}-{fc.Id}", (int) fc.HomeWorldId, (int)fc.House.City, fc.House.Ward+1, 0, fc.House.Plot+1, -1, false, false, string.Empty));
-        }
-
         if (selectable && ImGui.IsItemClicked(ImGuiMouseButton.Left))
-            if(Svc.ClientState.IsLoggedIn)
-            {
-                TeleportToFCHouse();
-            }
-            else
-            {
-                TaskManager taskManager = FCTrackerPlugin.Plugin.TaskManager;
-
-                taskManager.Enqueue(() => ECommonsIPC.Lifestream.ChangeCharacter(fc.MasterAvailable ? fc.MasterString : Configuration.Instance.GatheredData.CharByCID[fc.MemberCIDs.First()].Name, fc.WorldName));
-                taskManager.EnqueueDelay(100);
-                taskManager.Enqueue(() => !ECommonsIPC.Lifestream.IsBusy());
-                taskManager.EnqueueDelay(100);
-                taskManager.Enqueue(() => Svc.ClientState.IsLoggedIn);
-                taskManager.Enqueue(() => PlayerHelper.IsReady);
-                taskManager.Enqueue(TeleportToFCHouse);
-            }
+            LifestreamNavigator.GoToFCHouse(fc);
     }
 
     private static void DrawDemolitionCell(FCData fc)

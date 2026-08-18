@@ -13,8 +13,17 @@ public class ConfigurationFCDataService : IFCDataProvider
 
     public IReadOnlyList<FCData> GetAllFCs() => Source.ToList();
 
+    /// <summary>
+    /// FCs to show in Ready Now: those eligible to bid, plus any whose bid is still running or
+    /// only just resolved. Winning a plot clears IsEligible, so without the second clause the
+    /// FC would vanish from the tab at exactly the moment its result became interesting.
+    /// Sorted by world so the view can group on it.
+    /// </summary>
     public IReadOnlyList<FCData> GetEligibleFCs() =>
-        Source.Where(fc => fc.IsEligible).ToList();
+        Source.Where(fc => fc.IsEligible || fc.HasLiveLotteryBid)
+              .OrderBy(fc => fc.WorldName)
+              .ThenBy(fc => fc.FCName)
+              .ToList();
 
     public IReadOnlyList<FCData> GetUpcomingFCs() =>
         Source.Where(fc => fc is { IsEligible: false, HasHouse: false })

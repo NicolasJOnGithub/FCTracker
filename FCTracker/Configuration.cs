@@ -19,6 +19,7 @@ using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Client.UI.Info;
 using FFXIVClientStructs.FFXIV.Component.GUI;
+using Housing;
 using InteropGenerator.Runtime;
 using IPC;
 using Lumina.Excel.Sheets;
@@ -305,6 +306,11 @@ public class Configuration
                 fcData.House = houseInfo;
             }
         }
+
+        VerboseLog("Reconciling Lottery Bids");
+
+        LotteryTracker.SyncClaimedFromOwnedHouse(fcData);
+        LotteryTracker.TickStaleOutcomes(fcData);
 
         this.GatheredData.FCData[fcProxy->Id] = fcData;
 
@@ -659,6 +665,35 @@ public class FCData
 
     public HouseInfo? House { get; set; }
 
+    /// <summary>Housing lottery entries recorded for this FC, newest last.</summary>
+    public List<LotteryBidRecord> LotteryBids { get; set; } = [];
+
+    /// <summary>The bid worth showing in the UI: the most recent one, resolved or not.</summary>
+    [JsonIgnore]
+    public LotteryBidRecord? CurrentLotteryBid =>
+        this.LotteryBids.Count == 0 ? null : this.LotteryBids.MaxBy(b => b.EntryDateUtc);
+
+    /// <summary>
+    /// True while a bid is running or has just resolved. Ready Now keeps such FCs listed even
+    /// after a win takes them out of the "eligible" set, so you can see how the bid ended.
+    /// </summary>
+    [JsonIgnore]
+    public bool HasLiveLotteryBid
+    {
+        get
+        {
+            LotteryBidRecord? bid = this.CurrentLotteryBid;
+
+            if (bid == null)
+                return false;
+
+            return bid.Outcome == LotteryOutcome.Pending
+                       ? DateTime.UtcNow - bid.EntryDateUtc < TimeSpan.FromDays(FCTrackerPlugin.CYCLE_DURATION_DAYS * 2)
+                       : bid.OutcomeRecordedUtc.HasValue &&
+                         DateTime.UtcNow - bid.OutcomeRecordedUtc.Value < TimeSpan.FromDays(FCTrackerPlugin.CYCLE_DURATION_DAYS);
+        }
+    }
+
     [JsonIgnore]
     public string WorldName => this.World?.Name.ToString() ?? "??";
 
@@ -763,12 +798,26 @@ public class FCData
         this.HasHouse ?
             $"{this.House!.City} - Ward {this.House.Ward + 1} - Plot {this.House.Plot + 1}" :
             this.IsEligible ?
-                Censor.Hide(HouseHunterIPC.Instance.GetLotteryTextForFC(this) ?? "Eligible", "Bidding") :
+                Censor.Hide(this.GetLotteryText() ?? "Eligible", "Bidding") :
                 this.EligibilityDateReference == default ?
                     "Not yet founded" :
                     this.TimeSinceEligibilityReference.TotalDays >= 30 ?
                         "30d passed. Check Upcoming tab" :
                         $@"{this.@TimeUntilEligible:%d\d\ %h\h} left";
+
+    /// <summary>
+    /// Bid summary for this FC. Prefers what we recorded ourselves - that has an outcome and
+    /// survives HouseHunter being absent - and falls back to HouseHunter's live view otherwise.
+    /// </summary>
+    public string? GetLotteryText()
+    {
+        LotteryBidRecord? bid = this.CurrentLotteryBid;
+
+        if (bid != null)
+            return $"{bid.OutcomeText} · {bid.LocationText}";
+
+        return HouseHunterIPC.Instance.GetLotteryTextForFC(this);
+    }
 
     public string GetHousingDemolitionText() =>
         this.HasHouse ?
