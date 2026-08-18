@@ -79,7 +79,8 @@ public sealed class LotteryTracker : IDisposable
     {
         try
         {
-            string text = ReadAddonText((AtkUnitBase*)args.Addon);
+            // API 15 hands us an AtkUnitBasePtr wrapper rather than a raw pointer.
+            string text = ReadAddonText((AtkUnitBase*)args.Addon.Address);
             if (text.Length == 0 || !text.Contains("lottery", StringComparison.OrdinalIgnoreCase))
                 return;
 
