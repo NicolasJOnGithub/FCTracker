@@ -64,7 +64,12 @@ long check doesn't block anything else):
 2. **Travel** — `Lifestream.GoToHousingAddress(...)` to the plot's address, skipped if already there.
 3. **Open the placard** — interact with the nearest `EventObj` within 12 yalms until a
    `SelectYesno` or `HousingSignBoard` window appears. Retried on a timer rather than assumed to
-   work first try, since the nearest object isn't guaranteed to be the placard.
+   work first try, since the nearest object isn't guaranteed to be the placard. Lifestream's
+   drop-off is sometimes a little short of actual interact range, so the placard is first searched
+   for within 60 yalms and, if the nearest one found is beyond the 12-yalm interact radius, closed
+   in on via `vnavmesh`'s `SimpleMove.PathfindAndMoveTo` before interacting. Without vnavmesh
+   installed there's no safe way to close that gap, so the stage just keeps retrying until its own
+   timeout, same as before.
 4. **Read the result** — the existing placard sale-info hook fires as a side effect of opening it,
    and settles `PlayerResult` the same way it does for a manual visit.
 5. **Handle the dialog** — see below.
@@ -129,7 +134,7 @@ return RefundWording.Any(lower.Contains)     // "accept a full refund", "accept 
 A dialog is only confirmed when **two independent things agree**:
 
 ```csharp
-LotteryBidRecord? answered        = AnsweredRecord(step);
+LotteryBidRecord? answered        = AnsweredRecord(step) ?? JustSeenRecord(step);
 bool              placardSaysLost = (answered ?? step.Bid).Outcome == LotteryOutcome.Lost;
 
 if (kind == LotteryDialog.DialogKind.Refund && placardSaysLost)
@@ -142,6 +147,17 @@ The placard's own result byte (`0x03`, see the tracking doc) has to say `Loser` 
 **and** the dialog text has to read as a refund with no purchase wording anywhere in it. Either one
 alone is declined. A win — `ClaimPlot` — is always declined regardless of what the placard said,
 because claiming spends the FC's gil and that decision is left to a person.
+
+`AnsweredRecord` requires the cycle key to match `step.Bid`'s — needed for the cross-run dedup
+`PlotAlreadyAnswered`/`PropagateResult` do, but that's a `yyyy-MM-dd` string derived from a results
+timestamp computed two different ways depending on which phase the placard was viewed in (see
+`ResultsStartFor` in the tracking doc); a real loss was observed in a first live run where the
+refund got declined even though the outcome was later recorded correctly as Lost via
+`PropagateResult` — the leading theory is the two computations landed a day apart and the cycle
+keys never matched at the moment `HandleResult` needed them to. `JustSeenRecord` sidesteps that:
+same plot, any bidder or cycle, whose record was touched by the hook in the last minute, which can
+only be from the placard being looked at right now. Worth confirming this was in fact the cause
+next time a loss comes up in the log with dry run on.
 
 The refund *amount* is only used for logging which case happened (a full deposit back means the
 lottery was lost; half means a won plot whose claim window lapsed), matching the outcome text the
@@ -179,17 +195,24 @@ is exactly one place this behaviour is implemented.
 
 ## What to verify in game
 
-This automation was written and reviewed without a compiler or a running game on hand, so two things
-deserve real observation before trusting it unattended:
+This automation was written and reviewed without a compiler or a running game on hand, so real
+observation before trusting it unattended still matters:
 
-- **Placard targeting.** "Nearest `EventObj` within 12 yalms" is a heuristic. If a plot has another
-  interactable that close, the wrong thing might get targeted on the first attempt — harmless, since
-  the stage just keeps retrying until a placard window actually appears, but worth watching once.
+- **Placard targeting.** "Nearest `EventObj` within 60 yalms, walked in via vnavmesh if beyond the
+  12-yalm interact radius" is still a heuristic. If a plot has another interactable closer than the
+  real placard, the wrong thing might get targeted first — harmless, since the stage just keeps
+  retrying until a placard window actually appears, but worth watching once. Also confirm vnavmesh
+  is actually installed for any character expected to check a bid — without it, a too-far placard
+  just times out the same as it did before this fix.
 - **The dialog wording.** `LotteryDialog`'s word lists are taken from the `Addon` sheet's English
   text. If anything about the dialog differs from what's documented in the tracking doc — different
   wording, a prompt neither list matches — it will correctly fall through to `Other` and be declined,
   but the goal is for real bids to actually get resolved, not just declined safely. Run the first
   cycle with dry run on and read the log.
+- **The cycle-key race behind `JustSeenRecord`** (see above) — the log now says explicitly what the
+  bid's own outcome was and what the freshest observation said whenever a refund gets declined for
+  disagreeing with the placard, so a real occurrence should be diagnosable straight from the log
+  next time instead of guessed at.
 
 ## Building
 

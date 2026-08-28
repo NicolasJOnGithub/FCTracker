@@ -10,6 +10,7 @@ using ECommons.Automation.NeoTaskManager;
 using ECommons.DalamudServices;
 using ECommons.GameHelpers;
 using ECommons.IPC;
+using ECommons.Throttlers;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
@@ -193,6 +194,23 @@ public sealed class LotteryCheckRunner
         step.Bid.IsResolved || AnsweredRecord(step) != null;
 
     /// <summary>
+    /// Same plot, any bidder or cycle, whose result the placard hook wrote within the last minute -
+    /// i.e. it can only be from the placard we are looking at right now. Unlike
+    /// <see cref="AnsweredRecord"/> this doesn't require the cycle key to match <paramref name="step"/>'s
+    /// bid: that exact-cycle bookkeeping matters for cross-run dedup, but "what did the placard I'm
+    /// standing at just say" doesn't need it, and requiring it needlessly risks a same-visit read
+    /// getting declined as unanswered over a cycle-key computation that landed a day off.
+    /// </summary>
+    private static LotteryBidRecord? JustSeenRecord(Step step) =>
+        step.Fc.LotteryBids
+           .Where(b => b.TerritoryTypeId == step.Bid.TerritoryTypeId &&
+                       b.Ward            == step.Bid.Ward            &&
+                       b.Plot            == step.Bid.Plot            &&
+                       DateTime.UtcNow - b.LastSeenUtc < TimeSpan.FromMinutes(1))
+           .OrderByDescending(b => b.LastSeenUtc)
+           .FirstOrDefault();
+
+    /// <summary>
     /// The placard hook keys records per character, so a sweep can settle a plot under a different
     /// character than the row we started from. Carry that answer back to the bid we were checking.
     /// </summary>
@@ -262,9 +280,21 @@ public sealed class LotteryCheckRunner
         return true;
     }
 
+    /// <summary>Close enough to interact with the placard directly.</summary>
+    private const float PlacardInteractRadius = 12f;
+
+    /// <summary>
+    /// How far out to look for the placard at all. Wider than the interact radius because
+    /// Lifestream sometimes drops a character short of the actual plot entrance - just enough
+    /// that the placard is visible but out of reach - and we still need to find it to know which
+    /// way to walk.
+    /// </summary>
+    private const float PlacardSearchRadius = 60f;
+
     /// <summary>
     /// Interact with the plot's placard. Retries until one of the placard windows is up, so a
-    /// mis-targeted first attempt just tries again on the next tick.
+    /// mis-targeted first attempt just tries again on the next tick. If Lifestream's drop-off left
+    /// us out of interact range, close the gap with vnavmesh before trying to interact.
     /// </summary>
     private static unsafe bool OpenPlacard()
     {
@@ -282,16 +312,46 @@ public sealed class LotteryCheckRunner
 
         IGameObject? placard = Svc.Objects
                                   .Where(o => o.ObjectKind == ObjectKind.EventObj)
-                                  .Where(o => Vector3.Distance(o.Position, me) < 12f)
+                                  .Where(o => Vector3.Distance(o.Position, me) < PlacardSearchRadius)
                                   .MinBy(o => Vector3.Distance(o.Position, me));
 
         if (placard == null)
             return false;
 
+        if (Vector3.Distance(placard.Position, me) > PlacardInteractRadius)
+        {
+            MoveTowards(placard.Position);
+            return false;
+        }
+
+        if (ECommonsIPC.Vnavmesh.Available && ECommonsIPC.Vnavmesh.IsRunning())
+            ECommonsIPC.Vnavmesh.Stop();
+
         TargetSystem.Instance()->InteractWithObject(
             (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)placard.Address, false);
 
         return false;
+    }
+
+    /// <summary>
+    /// Walk toward a too-far placard using vnavmesh. Without it installed there is no safe way to
+    /// close the gap, so this just leaves the step retrying until its own timeout - the same
+    /// behaviour as before vnavmesh support existed, just with a log line explaining why.
+    /// </summary>
+    private static void MoveTowards(Vector3 destination)
+    {
+        if (!ECommonsIPC.Vnavmesh.Available)
+        {
+            if (EzThrottler.Throttle("lottery: vnavmesh missing", 30_000))
+                Svc.Log.Warning("[FCTracker lottery check] placard is out of interact range and vnavmesh is not installed - cannot get closer.");
+
+            return;
+        }
+
+        if (ECommonsIPC.Vnavmesh.PathfindInProgress())
+            return;
+
+        ECommonsIPC.Vnavmesh.PathfindAndMoveTo(destination, false);
     }
 
     /// <summary>
@@ -317,7 +377,7 @@ public sealed class LotteryCheckRunner
         LotteryDialog.DialogKind   kind = LotteryDialog.Classify(text);
         LotteryDialog.LogClassification("SelectYesno", text, kind);
 
-        LotteryBidRecord? answered      = AnsweredRecord(step);
+        LotteryBidRecord? answered      = AnsweredRecord(step) ?? JustSeenRecord(step);
         bool              placardSaysLost = (answered ?? step.Bid).Outcome == LotteryOutcome.Lost;
 
         if (kind == LotteryDialog.DialogKind.Refund && placardSaysLost)
@@ -341,9 +401,10 @@ public sealed class LotteryCheckRunner
         if (kind == LotteryDialog.DialogKind.ClaimPlot)
             this.Note($"{step.Bid.LocationText}: WON - left unclaimed, claim it yourself");
         else if (kind == LotteryDialog.DialogKind.Refund)
-            this.Note($"{step.Bid.LocationText}: refund offered but the placard did not report a loss - declined");
+            this.Note($"{step.Bid.LocationText}: refund offered but the placard did not report a loss " +
+                      $"(bid={step.Bid.OutcomeText}, seen={answered?.OutcomeText ?? "nothing recent"}) - declined");
         else
-            this.Note($"{step.Bid.LocationText}: unrecognised prompt - declined");
+            this.Note($"{step.Bid.LocationText}: unrecognised prompt ('{text}') - declined");
 
         Decline(addon);
 
