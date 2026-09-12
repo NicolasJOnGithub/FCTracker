@@ -41,8 +41,9 @@ public sealed class LotteryCheckRunner
     private readonly List<Step>       queue = [];
     private readonly List<string>     log   = [];
 
-    private int   index;
-    private Step? current;
+    private int       index;
+    private Step?     current;
+    private DateTime? refundAcceptedAtUtc;
 
     public bool   Running { get; private set; }
     public string Status  { get; private set; } = string.Empty;
@@ -79,8 +80,9 @@ public sealed class LotteryCheckRunner
 
         this.queue.Clear();
         this.log.Clear();
-        this.index   = 0;
-        this.current = null;
+        this.index               = 0;
+        this.current             = null;
+        this.refundAcceptedAtUtc = null;
 
         foreach (FCData fc in fcs.Where(HasWork))
         foreach (LotteryBidRecord bid in fc.LotteryBids.Where(b => b.Outcome == LotteryOutcome.Pending))
@@ -155,6 +157,7 @@ public sealed class LotteryCheckRunner
 
         this.taskManager.Enqueue(() => OpenPlacard(),               "lottery: open placard",    new TaskManagerConfiguration(45_000));
         this.taskManager.Enqueue(() => this.HandleResult(step),     "lottery: read result",     new TaskManagerConfiguration(30_000));
+        this.taskManager.Enqueue(this.RefundConfirmed,              "lottery: refund confirmed", new TaskManagerConfiguration(15_000));
 
         this.taskManager.Enqueue(this.Advance, "lottery: next");
     }
@@ -392,6 +395,7 @@ public sealed class LotteryCheckRunner
             else
             {
                 this.Note($"Accepting a refund of {amount:N0} gil on {step.Bid.LocationText}");
+                this.refundAcceptedAtUtc = DateTime.UtcNow;
                 Callback.Fire(addon, true, 0);
             }
 
@@ -412,6 +416,25 @@ public sealed class LotteryCheckRunner
     }
 
     private static unsafe void Decline(AtkUnitBase* addon) => Callback.Fire(addon, true, 1);
+
+    /// <summary>
+    /// Firing the accept only sends the click - it says nothing about whether the gil actually
+    /// landed before we swap to another character. Wait for the game's own "you are refunded" log
+    /// line, the one signal that confirms the transaction actually completed. If it never shows up
+    /// the step's own timeout still lets the sweep move on rather than hang forever.
+    /// </summary>
+    private bool RefundConfirmed()
+    {
+        if (this.refundAcceptedAtUtc == null)
+            return true;
+
+        DateTime? observed = FCTrackerPlugin.Plugin.LotteryTracker.LastRefundObservedUtc;
+        if (!observed.HasValue || observed.Value < this.refundAcceptedAtUtc.Value)
+            return false;
+
+        this.refundAcceptedAtUtc = null;
+        return true;
+    }
 
     // -------------------------------------------------------------------- notes
 

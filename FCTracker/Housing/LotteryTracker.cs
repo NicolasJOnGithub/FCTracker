@@ -49,6 +49,13 @@ public sealed class LotteryTracker : IDisposable
 
     public bool HookInstalled => this.placardHook?.Installed ?? false;
 
+    /// <summary>
+    /// UTC time of the most recent "you are refunded" log message, set regardless of whether it
+    /// matched a pending bid. The lottery check runner waits on this before it dares swap
+    /// characters - accepting only sends the click, the gil lands a moment later.
+    /// </summary>
+    public DateTime? LastRefundObservedUtc { get; private set; }
+
     public LotteryTracker()
     {
         this.placardHook    =  new PlacardSaleHook(this.OnPlacardSaleInfo);
@@ -286,6 +293,7 @@ public sealed class LotteryTracker : IDisposable
 
             if (RefundIds.Contains(id))
             {
+                this.LastRefundObservedUtc = DateTime.UtcNow;
                 this.ResolveRefund(message);
                 return;
             }
