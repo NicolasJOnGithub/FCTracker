@@ -697,7 +697,7 @@ public class FCData
             return bid.Outcome == LotteryOutcome.Pending
                        ? DateTime.UtcNow - bid.EntryDateUtc < TimeSpan.FromDays(FCTrackerPlugin.CYCLE_DURATION_DAYS * 2)
                        : bid.OutcomeRecordedUtc.HasValue &&
-                         DateTime.UtcNow - bid.OutcomeRecordedUtc.Value < TimeSpan.FromDays(FCTrackerPlugin.CYCLE_DURATION_DAYS);
+                         DateTime.UtcNow - bid.OutcomeRecordedUtc.Value < TimeSpan.FromDays(FCTrackerPlugin.RESULTS_PERIOD_DURATION_DAYS);
         }
     }
 
