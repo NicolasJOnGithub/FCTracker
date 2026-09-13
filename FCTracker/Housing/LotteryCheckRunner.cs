@@ -357,15 +357,15 @@ public sealed class LotteryCheckRunner
         ECommonsIPC.Vnavmesh.PathfindAndMoveTo(destination, false);
     }
 
-    /// <summary>
-    /// Decide what to do with whatever the placard put on screen.
-    ///
-    /// Confirming requires two independent agreements: the placard's own result byte said this bid
-    /// lost, AND the prompt text reads as a refund with no purchase wording anywhere in it. Anything
-    /// else - a win, an unfamiliar prompt, a disagreement between the two - is declined untouched.
-    /// </summary>
+    /// <summary>Decide what to do with whatever the placard put on screen.</summary>
     private unsafe bool HandleResult(Step step)
     {
+        // SelectYesno is checked first because it can sit as a modal on top of a HousingSignBoard
+        // that hasn't closed yet - if the board's readiness were checked first, an actionable
+        // refund/claim prompt underneath it would never get a chance to be handled.
+        if (GenericHelpers.TryGetAddonByName("SelectYesno", out AtkUnitBase* addon) && addon->IsReady())
+            return this.HandleSelectYesno(step, addon);
+
         if (GenericHelpers.TryGetAddonByName("HousingSignBoard", out AtkUnitBase* board) && board->IsReady())
         {
             // The sale-info hook fires on this same interact and only ever touches a record when
@@ -381,9 +381,16 @@ public sealed class LotteryCheckRunner
             return true;
         }
 
-        if (!GenericHelpers.TryGetAddonByName("SelectYesno", out AtkUnitBase* addon) || !addon->IsReady())
-            return false;
+        return false;
+    }
 
+    /// <summary>
+    /// Confirming requires two independent agreements: the placard's own result byte said this bid
+    /// lost, AND the prompt text reads as a refund with no purchase wording anywhere in it. Anything
+    /// else - a win, an unfamiliar prompt, a disagreement between the two - is declined untouched.
+    /// </summary>
+    private unsafe bool HandleSelectYesno(Step step, AtkUnitBase* addon)
+    {
         string                     text = LotteryDialog.ReadText(addon);
         LotteryDialog.DialogKind   kind = LotteryDialog.Classify(text);
         LotteryDialog.LogClassification("SelectYesno", text, kind);
