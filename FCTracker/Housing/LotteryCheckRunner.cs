@@ -368,6 +368,14 @@ public sealed class LotteryCheckRunner
     {
         if (GenericHelpers.TryGetAddonByName("HousingSignBoard", out AtkUnitBase* board) && board->IsReady())
         {
+            // The sale-info hook fires on this same interact and only ever touches a record when
+            // the viewer actually has a stake (HasOwnEntry) - so a record resolving just now means
+            // this character does have an entry, and the game just hasn't opened the refund/claim
+            // prompt yet. Closing the board here would dismiss the placard before SelectYesno ever
+            // gets a chance to appear, stranding the refund unclaimed under a wrong "no entry" read.
+            if (JustSeenRecord(step) != null)
+                return false;
+
             this.Note($"{step.Character.Name}: no entry on this plot");
             Callback.Fire(board, true, -1);
             return true;
