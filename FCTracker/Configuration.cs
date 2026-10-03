@@ -108,7 +108,8 @@ public class Configuration
         {
             Dictionary<ulong, FCData> allFCData = new(this.GatheredData.FCData);
             foreach (GatheredData data in this.ImportedData)
-                allFCData.AddRange(data.FCData);
+                foreach ((ulong key, FCData value) in data.FCData)
+                    allFCData.TryAdd(key, value);
 
             return allFCData;
         }
